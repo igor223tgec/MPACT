@@ -27,14 +27,14 @@ simplefilter("ignore", UserWarning)
 simplefilter("ignore", hierarchy.ClusterWarning)
 
 #Set version
-version = "1.00"
+version = "1.01"
 
 #Count how much cpu core are in PC
 num_threads = cpu_count()
 
 #Set a help message
 help = """
-MPACT - Multimetric PAirwise Comparison Tool version """+version+""" - 02 apr 2025
+MPACT - Multimetric PAirwise Comparison Tool version """+version+""" - 10 apr 2025
 This program perform all-against-all pairwise comparisons for biological sequences 
 and protein structures with five diferent metrics. The results are presented in 
 heatmap graph, frequency distribution, trees and matrices.
@@ -79,9 +79,13 @@ Additional parameters:
 				3 - pairwise structural alignment (TM-score value)
 				4 - pairwise 3Di-character alignment (% value)
 	Examples:
-				ML 7.5-9,0: -s 2,7.5,9.0
-				Similarity 70-85%: -s 2,70,85
-				TM-score 0.75-1.0: -s 3,0.75,1
+				ML 7.5-9,0: -g 2,7.5,9.0
+				Similarity 70-85%: -g 2,70,85
+				TM-score 0.75-1.0: -g 3,0.75,1
+				ML 2-3 / Similarity 70-100% / 3Di similarity 85-100:
+				  -g 2,2,3/1,70,100/4,85,100
+				  The character / (slash) is used as a separator
+				  between multiple sets of partition parameters
 
 -h help                       	Print this page of help
 
@@ -96,7 +100,7 @@ Additional parameters:
 -n names* <id|org|all>		Names for labels. Examples:
                                   id - YP_003289293.1 (default)
                                   org - Drosophila totivirus 1
-                                  all - YP_003289293.1 - Drosophila totivirus 1
+                                  all - YP_003289293.1_RNA-dependent_RNA_polymerase_Drosophila_totivirus_1
 
 -q iqtree <parameters>		Only "-m", "-bb" and "-nt" IQTREE parameters are
 				accepted
@@ -119,7 +123,7 @@ parser = argparse.ArgumentParser(add_help=False, formatter_class=RawTextHelpForm
 parser.add_argument('-i')
 parser.add_argument('-conf')
 parser.add_argument('-s')
-parser.add_argument('-p', default='0,1,2,3,4')
+parser.add_argument('-p')
 parser.add_argument('-o')
 parser.add_argument('-c', default='RdBu')
 parser.add_argument('-k', default='nj')
@@ -182,8 +186,11 @@ def configuration_file(args):
   for line in conf_lines:
     if line.strip() in ["", "\n"]:
       continue
-    letter = line.split("=")[0].split()[0]
-    argument = line.split("=")[1].split()[0]
+    if "=" in line:
+      letter = line.split("=")[0].strip()
+      argument = line.split("=")[1].strip()
+    else:
+      continue
 
     #For input FASTA file
     if letter == "i":
@@ -215,6 +222,7 @@ def configuration_file(args):
 
     #For clustering in subgroups
     if letter == "g":
+      argument = argument.replace(" ", "")
       subgroups_formation = argument
 
     #For MAFFT program parameters
@@ -460,79 +468,89 @@ def check_mafft(param_mafft):
 
   return mafft_cmd
 
-def check_clustering(clust_cmd):
+
+def check_clustering(clust_cmdline):
   """Check the syntax of the data partitioning parameter (-g)"""
-  if "," not in clust_cmd:
+  if "," not in clust_cmdline:
     print("ERROR: Clustering command not valid. Please review the syntax.")
     sys.exit()
 
-  clust_cmd_list = clust_cmd.split(",")
+  all_partitions = {}
 
-  if len(clust_cmd_list) != 3:
-    print("ERROR: Clustering command not valid. Please review the syntax.")
-    sys.exit()
+  for clust_cmd in clust_cmdline.split("/"):
+    clust_cmd_list = clust_cmd.strip().replace(" ", "").split(",")
 
-  if can_be_float(clust_cmd_list[1]) == False:
-    print("ERROR: Specified lower limit is not a number. Please review the syntax.")
-    sys.exit()
-
-  if can_be_float(clust_cmd_list[2]) == False:
-    print("ERROR: Specified upper limit is not a number. Please review the syntax.")
-    sys.exit()
-
-  lower_limit = float(clust_cmd_list[1])
-  upper_limit = float(clust_cmd_list[2])
-
-  if upper_limit < lower_limit:
-    print("ERROR: Lower limit is higher than upper limit. Please review the syntax.")
-    sys.exit()
-
-
-  #Checks if the values ​​are within the range of the chosen metric.
-  if clust_cmd_list[0] == "0":
-    if lower_limit < 0 or lower_limit > 100:
-      print("ERROR: Specified lower limit is out of identity range. Choose a number between 0 and 100 (%).")
-      sys.exit()
-    if upper_limit < 0 or upper_limit > 100:
-      print("ERROR: Specified upper limit is out of identity range. Choose a number between 0 and 100 (%).")
-      sys.exit()
-  elif clust_cmd_list[0] == "1":
-    if lower_limit < 0 or lower_limit > 100:
-      print("ERROR: Specified lower limit is out of similarity range. Choose a number between 0 and 100 (%).")
-      sys.exit()
-    if upper_limit < 0 or upper_limit > 100:
-      print("ERROR: Specified upper limit is out of similarity range. Choose a number between 0 and 100 (%).")
+    if len(clust_cmd_list) != 3:
+      print("ERROR: Clustering command not valid. Please review the syntax.")
       sys.exit()
 
-  elif clust_cmd_list[0] == "2":
-    if lower_limit < 0 or lower_limit > 10:
-      print("ERROR: Specified lower limit is out of maximum-likelihood distance range. Choose a number between 0 and 10.")
-      sys.exit()
-    if upper_limit < 0 or upper_limit > 10:
-      print("ERROR: Specified upper limit is out of maximum-likelihood distance range. Choose a number between 0 and 10.")
+    if can_be_float(clust_cmd_list[1]) == False:
+      print("ERROR: Specified lower limit is not a number. Please review the syntax.")
       sys.exit()
 
-  elif clust_cmd_list[0] == "3":
-    if lower_limit < 0 or lower_limit > 1:
-      print("ERROR: Specified lower limit is out of TM-scores range. Choose a number between 0 and 1.")
-      sys.exit()
-    if upper_limit < 0 or upper_limit > 1:
-      print("ERROR: Specified upper limit is out of TM-scores range. Choose a number between 0 and 1.")
+    if can_be_float(clust_cmd_list[2]) == False:
+      print("ERROR: Specified upper limit is not a number. Please review the syntax.")
       sys.exit()
 
-  elif clust_cmd_list[0] == "4":
-    if lower_limit < 0 or lower_limit > 100:
-      print("ERROR: Specified lower limit is out of 3Di characters similarity range. Choose a number between 0 and 100 (%).")
-      sys.exit()
-    if upper_limit < 0 or upper_limit > 100:
-      print("ERROR: Specified upper limit is out of 3Di characters similarity range. Choose a number between 0 and 100 (%).")
+    lower_limit = float(clust_cmd_list[1])
+    upper_limit = float(clust_cmd_list[2])
+
+    if upper_limit < lower_limit:
+      print("ERROR: Lower limit is higher than upper limit. Please review the syntax.")
       sys.exit()
 
-  else:
-    print("ERROR: Method of clustering command not recognized. Please review the syntax.")
-    sys.exit()
 
-  return clust_cmd_list
+    #Checks if the values ​​are within the range of the chosen metric.
+    if clust_cmd_list[0] == "0":
+      if lower_limit < 0 or lower_limit > 100:
+        print("ERROR: Specified lower limit is out of identity range. Choose a number between 0 and 100 (%).")
+        sys.exit()
+      if upper_limit < 0 or upper_limit > 100:
+        print("ERROR: Specified upper limit is out of identity range. Choose a number between 0 and 100 (%).")
+        sys.exit()
+
+    elif clust_cmd_list[0] == "1":
+      if lower_limit < 0 or lower_limit > 100:
+        print("ERROR: Specified lower limit is out of similarity range. Choose a number between 0 and 100 (%).")
+        sys.exit()
+      if upper_limit < 0 or upper_limit > 100:
+        print("ERROR: Specified upper limit is out of similarity range. Choose a number between 0 and 100 (%).")
+        sys.exit()
+
+    elif clust_cmd_list[0] == "2":
+      if lower_limit < 0 or lower_limit > 10:
+        print("ERROR: Specified lower limit is out of maximum-likelihood distance range. Choose a number between 0 and 10.")
+        sys.exit()
+      if upper_limit < 0 or upper_limit > 10:
+        print("ERROR: Specified upper limit is out of maximum-likelihood distance range. Choose a number between 0 and 10.")
+        sys.exit()
+
+    elif clust_cmd_list[0] == "3":
+      if lower_limit < 0 or lower_limit > 1:
+        print("ERROR: Specified lower limit is out of TM-scores range. Choose a number between 0 and 1.")
+        sys.exit()
+      if upper_limit < 0 or upper_limit > 1:
+        print("ERROR: Specified upper limit is out of TM-scores range. Choose a number between 0 and 1.")
+        sys.exit()
+
+    elif clust_cmd_list[0] == "4":
+      if lower_limit < 0 or lower_limit > 100:
+        print("ERROR: Specified lower limit is out of 3Di characters similarity range. Choose a number between 0 and 100 (%).")
+        sys.exit()
+      if upper_limit < 0 or upper_limit > 100:
+        print("ERROR: Specified upper limit is out of 3Di characters similarity range. Choose a number between 0 and 100 (%).")
+        sys.exit()
+
+    else:
+      print("ERROR: Method of clustering command not recognized. Please review the syntax.")
+      sys.exit()
+
+    if clust_cmd_list[0] not in all_partitions:
+      all_partitions[clust_cmd_list[0]] = [(clust_cmd_list[1], clust_cmd_list[2])]
+    else:
+      all_partitions[clust_cmd_list[0]] += [(clust_cmd_list[1], clust_cmd_list[2])]
+
+  return all_partitions
 
 
 def check_iqtree(param_iqtree):
@@ -584,7 +602,7 @@ def check_iqtree(param_iqtree):
   iqtree_cmd = " ".join(iqtree_list)
   return iqtree_cmd
 
-def log_header(log, args, type_sequence, type_header, version):
+def log_header(log, args, type_sequence, type_header, clust_cmd_list ,version):
   """Open the logfile and write a header with run informations"""
   #Setting date time for logfile
   now = datetime.datetime.now()
@@ -638,6 +656,12 @@ def log_header(log, args, type_sequence, type_header, version):
 
 
   #Preparing methods informations for logfile
+  if args.p == "":
+    protocols = list(clust_cmd_list.keys())
+  else:
+    protocols =args.p
+
+
   method_dict = {"0": "(0) pairwise sequence alignment identity",
                  "1": "(1) pairwise sequence alignment similarity",
                  "2": "(2) maximum likelihood distance",
@@ -646,7 +670,7 @@ def log_header(log, args, type_sequence, type_header, version):
                  }
   methods = ""
   for met in method_dict:
-    if met in args.p:
+    if met in protocols:
       methods += f"\n  - {method_dict[met]}"
 
   #Preparing clustering methods informations for logfile
@@ -680,13 +704,16 @@ def log_header(log, args, type_sequence, type_header, version):
                  "4": "3Di similarity",
                  }
   if args.g:
-    method_partitioning = args.g.split(",")[0]
-    lower_limit = args.g.split(",")[1]
-    upper_limit = args.g.split(",")[2]
-    if method_partitioning in ["0", "1", "4"]:
-      log_data_partitioning = f"{args.g} ({lower_limit}% to {upper_limit}% of {method_partit_dict[method_partitioning]})"
-    elif method_partitioning in ["2", "3"]:
-      log_data_partitioning = f"{args.g} ({lower_limit} to {upper_limit} of {method_partit_dict[method_partitioning]})"
+    partitions_log_list = []
+    for partition in args.g.replace(" ", "").split("/"):
+      method_partitioning = partition.split(",")[0]
+      lower_limit = partition.split(",")[1]
+      upper_limit = partition.split(",")[2]
+      if method_partitioning in ["0", "1", "4"]:
+        partitions_log_list.append(f"{partition} ({lower_limit}% to {upper_limit}% of {method_partit_dict[method_partitioning]})")
+      elif method_partitioning in ["2", "3"]:
+        partitions_log_list.append(f"{partition} ({lower_limit} to {upper_limit} of {method_partit_dict[method_partitioning]})")
+    log_data_partitioning = "; ".join(partitions_log_list)
   else:
     log_data_partitioning = "NOT SPECIFIED"
 
@@ -1932,7 +1959,7 @@ def create_njheatmap(all_data, nj_order, args, order_type, type_header, log):
 def cluster_in_subdata(clust_cmd_list, subdata, order, args, align_type, log):
   """Execute the data partitioning, according to user-defined thresolds"""
 
-  print("Data partitioning in execution...")
+  print("\nData partitioning in execution...")
   method_partit_dict = {"0": "Identity",
                  "1": "Similarity",
                  "2": "Maximum likelihood distance",
@@ -1943,14 +1970,15 @@ def cluster_in_subdata(clust_cmd_list, subdata, order, args, align_type, log):
   method_partitioning = clust_cmd_list[0]
   lower_limit = float(clust_cmd_list[1])
   upper_limit = float(clust_cmd_list[2])
+  cmd_clust = f"{method_partitioning},{lower_limit},{upper_limit}"
   if method_partitioning in ["0", "1", "4"]:
-    log.write(f"- Partitioning argument (-g): {args.g} ({lower_limit}% to {upper_limit}% of {method_partit_dict[method_partitioning]})\n")
-    print(f"- Partitioning argument (-g): {args.g} ({lower_limit}% to {upper_limit}% of {method_partit_dict[method_partitioning]})")
+    log.write(f"- Partitioning argument (-g): {cmd_clust} ({lower_limit}% to {upper_limit}% of {method_partit_dict[method_partitioning]})\n")
+    print(f"- Partitioning argument (-g): {cmd_clust} ({lower_limit}% to {upper_limit}% of {method_partit_dict[method_partitioning]})")
   elif method_partitioning in ["2", "3"]:
-    log.write(f"- Partitioning argument (-g): {args.g} ({lower_limit} to {upper_limit} of {method_partit_dict[method_partitioning]})\n")
-    print(f"- Partitioning argument (-g): {args.g} ({lower_limit} to {upper_limit} of {method_partit_dict[method_partitioning]})")
+    log.write(f"- Partitioning argument (-g): {cmd_clust} ({lower_limit} to {upper_limit} of {method_partit_dict[method_partitioning]})\n")
+    print(f"- Partitioning argument (-g): {cmd_clust} ({lower_limit} to {upper_limit} of {method_partit_dict[method_partitioning]})")
 
-  log.write("\nOrder of comparison: {';'.join(order)}\n")
+  log.write(f"\nOrder of comparison: {';'.join(order)}\n")
 
   #Remove redundant comparisons.
   new_subdata = []
@@ -2005,8 +2033,7 @@ def cluster_in_subdata(clust_cmd_list, subdata, order, args, align_type, log):
     log.write("\n")
     i+=1
 
-
-  method_for_name = {"0": "ident", "1": "simil", "2": "mldist", "3": "tm", "4": "3di", "5": "3dimldist", "6": "megamldist"}
+  method_for_name = {"0": "ident", "1": "simil", "2": "mldist", "3": "tm", "4": "3di"}
   method_name = method_for_name[clust_cmd_list[0]]
 
   #Defines the name of the data partitioning directory.
@@ -2014,10 +2041,10 @@ def cluster_in_subdata(clust_cmd_list, subdata, order, args, align_type, log):
   if os.path.isdir(dict_clstr) == False:
     os.mkdir(dict_clstr)
 
-  log.write(f"\nData partitioning report (Directory: {dict_clstr}):\n")
-  print("\n")
+  log.write(f"Data partitioning report (Directory: {dict_clstr}):\n")
   for line_report in cluster_report:
     log.write(line_report)
+  log.write("\n")
 
   #Writes the resulting clusters from input FASTA file.
   if clust_cmd_list[0] == "0" or clust_cmd_list[0] == "1" or clust_cmd_list[0] == "2":
@@ -2292,11 +2319,16 @@ heatmap graph, frequency distribution, trees and matrices.
 
     if args.g:
       clust_cmd_list = check_clustering(args.g)
-      args.p = clust_cmd_list[0]
     else:
-      clust_cmd_list = None
+      clust_cmd_list = {}
 
-    args.p = check_methods(args)
+    if args.p:
+      args.p = check_methods(args)
+    elif args.g:
+      args.p = ""
+    else:
+      args.p = "0,1,2,3,4"
+
     check_heatmap_param(args)
     cmd_iqtree = check_iqtree(args.q)
     cmd_mafft = check_mafft(args.f)
@@ -2325,379 +2357,147 @@ heatmap graph, frequency distribution, trees and matrices.
     with open(logfile, "w") as log_open:
       log_open.write("")
 
-      log = open(logfile, "a")
+    log = open(logfile, "a")
 
-      log_header(log, args, type_sequence, type_header, version)
+    log_header(log, args, type_sequence, type_header, clust_cmd_list, version)
 
-      all_data = {}
+    all_data = {}
 
-      data_for_ranges_table = {}
+    data_for_ranges_table = {}
 
-      part1 = "no"
-      if "0" in args.p or "1" in args.p or "2" in args.p:
-        part1 = "yes"
+    part1 = "no"
+    if "0" in args.p or "1" in args.p or "2" in args.p or "0" in clust_cmd_list or "1" in clust_cmd_list or "2" in clust_cmd_list:
+      part1 = "yes"
 
-      #Prints and writes that it's not possible run methods 0, 1 and 2 without a FASTA file (-i)
-      if args.i == None and part1 == "yes":
-        print("""
+    #Prints and writes that it's not possible run methods 0, 1 and 2 without a FASTA file (-i)
+    if args.i == None and part1 == "yes":
+      print("""
 WARNING:
 Not possible to run pairwise aa/nucleotide sequence alignment ('0' and '1') 
 or maximum likelihood ('2').
 FASTA file (-i) not specified.
 """)
+      log.write("""
+WARNING:
+Not possible to run pairwise aa/nucleotide sequence alignment ('0' and '1') 
+or maximum likelihood ('2').
+FASTA file (-i) not specified.
+""")
+    else:
+
+      if "0" in args.p or "1" in args.p or "0" in clust_cmd_list or "1" in clust_cmd_list:
         log.write("""
-WARNING:
-Not possible to run pairwise aa/nucleotide sequence alignment ('0' and '1') 
-or maximum likelihood ('2').
-FASTA file (-i) not specified.
-""")
-      else:
-
-        if "0" in args.p or "1" in args.p:
-          log.write("""
 ***** Pairwise Alignment *****
 """)
 
-          print("\nMethod: pairwise sequence alignment with NW")
+        print("\nMethod: pairwise sequence alignment with NW")
 
-          #Runs needle program if the .needle file doesn't exists.
-          if os.path.isfile(save_needle_dir+"/"+last_name_dir+".needle"):
-            log.write("""
+        #Runs needle program if the .needle file doesn't exists.
+        if os.path.isfile(save_needle_dir+"/"+last_name_dir+".needle"):
+          log.write("""
 - Needle file already exists. Skipping Needle run.
 - Using data from: """+save_needle_dir+"/"+args.o+".needle\n")
-            print("Needle file already exists. Skipping Needle run.")
-          else:
-            log.write("\nNeedle\n")
-            print("Running pairwise sequence alignments with needle…")
-            run_needle(args.i, args.o, type_header, type_sequence, log)
-            print("Pairwise sequence alignments completed.")
-                                                                                                
+          print("Needle file already exists. Skipping Needle run.")
+        else:
+          log.write("\nNeedle\n")
+          print("Running pairwise sequence alignments with needle…")
+          run_needle(args.i, args.o, type_header, type_sequence, log)
+          print("Pairwise sequence alignments completed.")
 
-
-          #Identity protocol execution
-          if "0" in args.p:
-            log.write("""
+        #Identity protocol execution
+        if "0" in args.p or "0" in clust_cmd_list:
+          log.write("""
 ********** Identity Protocol **********
 """)
-            print("\nIdentity protocol")
-            all_data = {}
-
-            #Extract the identity values from a already saved matrix or from .needle file.
-            matrix_name = save_needle_dir+"/"+last_name_dir+"_ident_matrix.csv"
-            if os.path.isfile(matrix_name):
-              data = read_matrix_csv(matrix_name)
-            else:
-              print(save_needle_dir+"/"+last_name_dir+".needle", type_sequence, 'ident')
-              data = data_from_needle(save_needle_dir+"/"+last_name_dir+".needle", type_sequence, 'ident')
-            mean, std = save_matrix(data, matrix_name, log)
-
-            #Extract the maximum and minimum, intra and intergroup for the prefix groups.
-            if prefixes != None:
-              data_for_ranges_table["AA identity %"] = create_range_table(matrix_name, prefixes, mean, std)
-
-            all_data[save_graphics_dir+"/"+last_name_dir+"_ident"] = data
-
-            log.write("\nIdentity outputs:\n")
-
-            #Performs the neighbor-joining clustering method.
-            nj_order = nj_tree(data, "ident", args, log)
-            clstr_order = nj_order
-
-            #Performs the data partitioning or...
-            if clust_cmd_list and clust_cmd_list[0] == "0":
-              log.write("\nData partitioning based on Identity values:\n")
-
-              for subdata in all_data:
-                cluster_in_subdata(clust_cmd_list, all_data[subdata], clstr_order, args, "ident", log)
-
-            #Generates graphics.
-            else:
-              if os.path.isdir(save_graphics_dir) == False:
-                os.mkdir(save_graphics_dir)
-
-              print("Generating frequency distribution plot of pairwise sequence alignment distance…")
-              create_freqplot(all_data)
-              print("Done.")
-
-              print("Generating heatmap plot of pairwise sequence alignment distance…")
-              create_njheatmap(all_data, nj_order, args, "nj", type_header, log)
-              if args.k != None and args.k != "nj":
-                create_clustermap(all_data, args, type_header, log)
-              print("Done.")
-
-
-            all_data = {}
-
-
-          #Similarity protocol execution
-          if "1" in args.p:
-            log.write("""
-********** Similarity Protocol **********
-""")
-            print("\nSimilarity protocol")
-            all_data = {}
-
-            #Extract the similarity values from a already saved matrix or from .needle file.
-            matrix_name = save_needle_dir+"/"+last_name_dir+"_simil_matrix.csv"
-            if os.path.isfile(matrix_name):
-              data = read_matrix_csv(matrix_name)
-            else:
-              data = data_from_needle(save_needle_dir+"/"+last_name_dir+".needle", type_sequence, 'simil')
-            mean, std = save_matrix(data, matrix_name, log)
-
-            #Extract the maximum and minimum, intra and intergroup for the prefix groups.
-            if prefixes != None:
-              data_for_ranges_table["AA similarity %"] = create_range_table(matrix_name, prefixes, mean, std)
-
-            all_data[save_graphics_dir+"/"+last_name_dir+"_simil"] = data
-
-            log.write("\nSimilarity outputs:\n")
-
-            #Performs the neighbor-joining clustering method.
-            nj_order = nj_tree(data, "simil", args, log)
-            clstr_order = nj_order
-
-            #Performs the data partitioning or...
-            if clust_cmd_list and clust_cmd_list[0] == "1":
-              for subdata in all_data:
-                cluster_in_subdata(clust_cmd_list, all_data[subdata], clstr_order, args, "simil", log)
-
-            #Generates graphics.
-            else:
-              if os.path.isdir(save_graphics_dir) == False:
-                os.mkdir(save_graphics_dir)
-
-              print("Generating frequency distribution plot of pairwise sequence alignment distance…")
-              create_freqplot(all_data)
-              print("Done.")
-
-              print("Generating heatmap plot of pairwise sequence alignment distance…")
-              create_njheatmap(all_data, nj_order, args, "nj", type_header, log)
-              if args.k != None and args.k != "nj":
-                create_clustermap(all_data, args, type_header, log)
-              print("Done.")
-
-            all_data = {}
-
-
-
-	#Maximum-likelihood protocol execution
-        if "2" in args.p:
-          log.write("""
-********** Maximum Likelihood Distance **********
-""")
-          print("\nMethod: Maximum-likelihood distance")
-
-          log.write("\nMAFFT:\n")
-
-          #Runs MAFFT program if the alignment file doesn't exists.
-          if os.path.isfile(save_align_dir+"/"+last_name_dir+".align"):
-            log.write("""- Multiple sequences alignment file already exists. Skipping MAFFT run.
-- Using data from: {save_align_dir}/{last_name_dir}.align\n""")
-            print("MAFFT aligned file already exists. Skipping MAFFT step.")
-
-          else:
-            print("Running multiple sequence alignment with MAFFT…")
-            run_mafft(args.i, args.o, cmd_mafft, log)
-            print("Multiple sequence alignment completed.")
-
-          #Runs IQ-TREE program if the .mldist file doesn't exists.
-          log.write("\nMAFFT:\n")
-          if os.path.isfile(save_iqtree_dir+"/"+last_name_dir+".mldist"):
-            log.write(f"""- IQ-TREE maximum-likelihood distance matrix file already exists. Skipping IQ-TREE run.
-- Using data from: {save_iqtree_dir}/{last_name_dir}.mldist\n""")
-            print("IQ-TREE maximum-likelihood distance matrix file already exists. Skipping IQ-TREE step.")
-
-          else:
-            print("Running phylogenetic analysis IQ-TREE…")
-            run_iqtree(save_align_dir+"/"+last_name_dir+".align", args.o, cmd_iqtree, "aa", log)
-            print("Phylogenetic analysis completed.")
-
-          data = data_from_mldist(save_iqtree_dir+"/"+last_name_dir+".mldist", log)
-
-          matrix_name = f"{save_iqtree_dir}/{last_name_dir}_mldist_matrix.csv"
-          mean, std = save_matrix(data, matrix_name, log)
-
-          #Extract the maximum and minimum, intra and intergroup for the prefix groups.
-          if prefixes != None:
-            data_for_ranges_table["ML distance"] = create_range_table(save_iqtree_dir+"/"+last_name_dir+".mldist", prefixes, mean, std)
-
-          all_data[save_graphics_dir+"/"+last_name_dir+"_mldist"] = data
-
-          log.write("\nMaximum-likelihood distance outputs:\n")
-
-          #Performs the neighbor-joining clustering method.
-          nj_order = nj_tree(data, "mldist", args, log)
-
-          name_mltree_ordered = save_iqtree_dir+"/"+last_name_dir+"_ordered.treefile"
-          mltree_order = make_mltree_order(data, save_iqtree_dir+"/"+last_name_dir+".treefile", args, save_iqtree_dir+"/"+last_name_dir+"_ordered.treefile")
-          clstr_order = mltree_order
-
-          #Performs the data partitioning or...
-          if clust_cmd_list and clust_cmd_list[0] == "2":
-            for subdata in all_data:
-              cluster_in_subdata(clust_cmd_list, all_data[subdata], clstr_order, args, "simil", log)
-
-          #Generates graphics.
-          else:
-            if os.path.isdir(save_graphics_dir) == False:
-              os.mkdir(save_graphics_dir)
-
-            print("Generating frequency distribution plot of pairwise sequence alignment distance…")
-            create_freqplot(all_data)
-            print("Done.")
-
-            print("Generating heatmap plot of pairwise sequence alignment distance…")
-            create_njheatmap(all_data, nj_order, args, "nj", type_header, log)
-            create_njheatmap(all_data, mltree_order, args, "phylogeny", type_header, log)
-            if args.k != None and args.k != "nj":
-              create_clustermap(all_data, args, type_header, log)
-            print("Done.")
-
+          print("\nIdentity protocol")
           all_data = {}
-
-
-      #Prints and writes that it's not possible run methods 3 and 4 without PDB files directory (-s)
-      part2 = "no"
-      if "3" in args.p or "4" in args.p:
-        part2 = "yes"
-      if args.s == None and part2 == "yes":
-        print("""
-WARNING:
-Not possible to run pairwise structural alignment ('3'),
-or pairwise 3di character alignment ('4').
-PDB files directory (-s) not specified.
-""")
-        log.write("""
-WARNING:
-Not possible to run pairwise structural alignment ('3'),
-or pairwise 3di character alignment ('4').
-PDB files directory (-s) not specified.
-""")
-      else:
-        if args.s != None and args.s.endswith("/"):
-          args.s = args.s[:-1]
-
-        if "3" in args.p:
-          print("\nMethod: Structural alignment (TM-score)")
-          log.write("""
-********** Structural alignment (TM-score) **********
-""")
-          log.write("\nTM-align:\n")
-
-          #Runs TM-align program.
-          print("Running pairwise structural alignments with TM-align")
-          run_tmalign(args.s, args.o, log)
-          print("Pairwise structural alignments completed.")
-
-         #Extract the identity values from a already saved matrix or from TM-align result directories.
-          matrix_name = save_tmalign_dir+"/"+last_name_dir+"_tmscores_matrix.csv"
-          if os.path.isfile(matrix_name):
-            data = read_matrix_csv(matrix_name)
-          else:
-            data = data_from_tmalign(args.o)
-          save_matrix(data, matrix_name, log)
-
-          #Extract the maximum and minimum, intra and intergroup for the prefix groups.
-          if prefixes != None:
-            data_for_ranges_table["TM-score"] = create_range_table(matrix_name, prefixes, mean, std)
-
-          mean, std = save_matrix(data, matrix_name, log)
-          all_data[save_graphics_dir+"/"+last_name_dir+"_tmscores"] = data
-
-          log.write("\nTM-score outputs:\n")
-
-          #Performs the neighbor-joining clustering method.
-          nj_order = nj_tree(data,  "tmscores", args, log)
-          clstr_order = nj_order
-
-          #Performs the data partitioning or...
-          if clust_cmd_list and clust_cmd_list[0] == "3":
-            for subdata in all_data:
-              cluster_in_subdata(clust_cmd_list, all_data[subdata], clstr_order, args, "simil", log)
-
-          #Generates graphics.
-          else:
-            if os.path.isdir(save_graphics_dir) == False:
-              os.mkdir(save_graphics_dir)
-
-            print("Generating frequency distribution plot of pairwise sequence alignment distance…")
-            create_freqplot(all_data)
-            print("Done.")
-
-            print("Generating heatmap plot of pairwise sequence alignment distance…")
-            create_njheatmap(all_data, nj_order, args, "nj", type_header, log)
-            if args.k != None and args.k != "nj":
-              create_clustermap(all_data, args, type_header, log)
-            print("Done.")
-
-          all_data = {}
-
-
-        if "4" in args.p:
-          if "/" in args.s:
-            entry_last_name_dir = args.s.split("/")[-1]
-          else:
-            entry_last_name_dir = args.s
-
-          print("\nMethod: pairwise 3Di-character alignment")
-          log.write("""
-********** 3Di Similarity **********
-""")
-          file_3Di = f"{args.o}/{entry_last_name_dir}_3Di.fasta"
-
-          log.write("\nFoldseek:\n")
-
-          #Runs Foldseek program if the 3Di FASTA file doesn't exists.
-          if os.path.isfile(file_3Di) == False:
-            print("Converting PDB to 3Di-character sequences with Foldseek")
-            log.write("\nRunning Foldseek:\n")
-            run_foldseek(args, log)
-            print("Conversion completed.\n")
-          else:
-            log.write(f"""- Skipping Foldseek run. Output files already exists:
-  - {file_3Di}\n""")
-            print("3Di and aa/3Di FASTA files already exist. Skipping Foldseek run.")
-
-
-          #Runs needle program if the 3Di .needle file doesn't exists.
-          needle_file = f'{args.o}/needle3Di_dir/{last_name_dir}_3Di_simil.needle'
-          log.write("\nNeedle (3Di characters alignment):\n")
-          if os.path.isfile(needle_file) == False:
-            print("Running pairwise 3Di-character sequence alignments with needle…")
-            run_needle3Di(file_3Di, args.o)
-            print("Pairwise 3Di-character sequence alignments completed.")
-          else:
-            log.write("- Needle 3Di similarity file already exists. Skipping Needle run.\n")
-            print("Needle 3Di similarity file already exists. Skipping Needle run.")
 
           #Extract the identity values from a already saved matrix or from .needle file.
-          matrix_name = save_3Dineedle_dir+"/"+last_name_dir+"_3Di_simil_matrix.csv"
+          matrix_name = save_needle_dir+"/"+last_name_dir+"_ident_matrix.csv"
           if os.path.isfile(matrix_name):
             data = read_matrix_csv(matrix_name)
           else:
-            data = data_from_needle3Di(needle_file, "3di")
+            print(save_needle_dir+"/"+last_name_dir+".needle", type_sequence, 'ident')
+            data = data_from_needle(save_needle_dir+"/"+last_name_dir+".needle", type_sequence, 'ident')
           mean, std = save_matrix(data, matrix_name, log)
 
           #Extract the maximum and minimum, intra and intergroup for the prefix groups.
           if prefixes != None:
-            data_for_ranges_table["3Di similarity %"] = create_range_table(matrix_name, prefixes, mean, std)
+            data_for_ranges_table["AA identity %"] = create_range_table(matrix_name, prefixes, mean, std)
 
-          all_data[save_graphics_dir+"/"+last_name_dir+"_3Di"] = data
+          all_data[save_graphics_dir+"/"+last_name_dir+"_ident"] = data
 
-          log.write("\n3Di Similarity outputs:\n")
+          log.write("\nIdentity outputs:\n")
 
           #Performs the neighbor-joining clustering method.
-          nj_order = nj_tree(data, "3Di", args, log)
+          nj_order = nj_tree(data, "ident", args, log)
           clstr_order = nj_order
 
           #Performs the data partitioning or...
-          if clust_cmd_list and clust_cmd_list[0] == "4":
+          if clust_cmd_list and "0" in clust_cmd_list:
+            method_clust = "0"
+            log.write("\nData partitioning based on Identity values:\n")
             for subdata in all_data:
-              cluster_in_subdata(clust_cmd_list, all_data[subdata], clstr_order, args, "simil", log)
+              for range_clust in clust_cmd_list[method_clust]:
+                cluster_in_subdata([method_clust, range_clust[0], range_clust[1]], all_data[subdata], clstr_order, args, "ident", log)
 
           #Generates graphics.
+          if "0" in args.p:
+            if os.path.isdir(save_graphics_dir) == False:
+              os.mkdir(save_graphics_dir)
+
+            print("Generating frequency distribution plot of pairwise sequence alignment distance…")
+            create_freqplot(all_data)
+            print("Done.")
+
+            print("Generating heatmap plot of pairwise sequence alignment distance…")
+            create_njheatmap(all_data, nj_order, args, "nj", type_header, log)
+            if args.k != None and args.k != "nj":
+              create_clustermap(all_data, args, type_header, log)
+            print("Done.")
+
+
+          all_data = {}
+
+
+        #Similarity protocol execution
+        if "1" in args.p or "1" in clust_cmd_list:
+          log.write("""
+********** Similarity Protocol **********
+""")
+          print("\nSimilarity protocol")
+          all_data = {}
+
+          #Extract the similarity values from a already saved matrix or from .needle file.
+          matrix_name = save_needle_dir+"/"+last_name_dir+"_simil_matrix.csv"
+          if os.path.isfile(matrix_name):
+            data = read_matrix_csv(matrix_name)
           else:
+            data = data_from_needle(save_needle_dir+"/"+last_name_dir+".needle", type_sequence, 'simil')
+          mean, std = save_matrix(data, matrix_name, log)
+
+          #Extract the maximum and minimum, intra and intergroup for the prefix groups.
+          if prefixes != None:
+            data_for_ranges_table["AA similarity %"] = create_range_table(matrix_name, prefixes, mean, std)
+
+          all_data[save_graphics_dir+"/"+last_name_dir+"_simil"] = data
+
+          log.write("\nSimilarity outputs:\n")
+
+          #Performs the neighbor-joining clustering method.
+          nj_order = nj_tree(data, "simil", args, log)
+          clstr_order = nj_order
+
+          #Performs the data partitioning or...
+          if clust_cmd_list and "1" in clust_cmd_list:
+            method_clust = "1"
+            log.write("\nData partitioning based on Similarity values:\n")
+            for subdata in all_data:
+              for range_clust in clust_cmd_list[method_clust]:
+                cluster_in_subdata([method_clust, range_clust[0], range_clust[1]], all_data[subdata], clstr_order, args, "simil", log)
+
+          #Generates graphics.
+          if "1" in args.p:
             if os.path.isdir(save_graphics_dir) == False:
               os.mkdir(save_graphics_dir)
 
@@ -2713,9 +2513,252 @@ PDB files directory (-s) not specified.
 
           all_data = {}
 
-      #Saves the ranges of comparisons of the prefix groups in csv format.
-      if prefixes:
-        save_results_to_csv(data_for_ranges_table, prefixes, args.o+"/metrics_ranges_table.csv", log)
 
-      print("Execution completed.")
-      log.write("\nExecution completed.")
+
+      #Maximum-likelihood protocol execution
+      if "2" in args.p or "2" in clust_cmd_list:
+        log.write("""
+********** Maximum Likelihood Distance **********
+""")
+        print("\nMethod: Maximum-likelihood distance")
+
+        log.write("\nMAFFT:\n")
+
+        #Runs MAFFT program if the alignment file doesn't exists.
+        if os.path.isfile(save_align_dir+"/"+last_name_dir+".align"):
+          log.write("""- Multiple sequences alignment file already exists. Skipping MAFFT run.
+- Using data from: {save_align_dir}/{last_name_dir}.align\n""")
+          print("MAFFT aligned file already exists. Skipping MAFFT step.")
+
+        else:
+          print("Running multiple sequence alignment with MAFFT…")
+          run_mafft(args.i, args.o, cmd_mafft, log)
+          print("Multiple sequence alignment completed.")
+
+        #Runs IQ-TREE program if the .mldist file doesn't exists.
+        log.write("\nMAFFT:\n")
+        if os.path.isfile(save_iqtree_dir+"/"+last_name_dir+".mldist"):
+          log.write(f"""- IQ-TREE maximum-likelihood distance matrix file already exists. Skipping IQ-TREE run.
+- Using data from: {save_iqtree_dir}/{last_name_dir}.mldist\n""")
+          print("IQ-TREE maximum-likelihood distance matrix file already exists. Skipping IQ-TREE step.")
+
+        else:
+          print("Running phylogenetic analysis IQ-TREE…")
+          run_iqtree(save_align_dir+"/"+last_name_dir+".align", args.o, cmd_iqtree, "aa", log)
+          print("Phylogenetic analysis completed.")
+
+        data = data_from_mldist(save_iqtree_dir+"/"+last_name_dir+".mldist", log)
+
+        matrix_name = f"{save_iqtree_dir}/{last_name_dir}_mldist_matrix.csv"
+        mean, std = save_matrix(data, matrix_name, log)
+
+        #Extract the maximum and minimum, intra and intergroup for the prefix groups.
+        if prefixes != None:
+          data_for_ranges_table["ML distance"] = create_range_table(save_iqtree_dir+"/"+last_name_dir+".mldist", prefixes, mean, std)
+
+        all_data[save_graphics_dir+"/"+last_name_dir+"_mldist"] = data
+
+        log.write("\nMaximum-likelihood distance outputs:\n")
+
+        #Performs the neighbor-joining clustering method.
+        nj_order = nj_tree(data, "mldist", args, log)
+
+        name_mltree_ordered = save_iqtree_dir+"/"+last_name_dir+"_ordered.treefile"
+        mltree_order = make_mltree_order(data, save_iqtree_dir+"/"+last_name_dir+".treefile", args, save_iqtree_dir+"/"+last_name_dir+"_ordered.treefile")
+        clstr_order = mltree_order
+
+        #Performs the data partitioning or...
+        if clust_cmd_list and "2" in clust_cmd_list:
+          method_clust = "2"
+          log.write("\nData partitioning based on Maximum-likelihood distance values:\n")
+          for subdata in all_data:
+            for range_clust in clust_cmd_list[method_clust]:
+              cluster_in_subdata([method_clust, range_clust[0], range_clust[1]], all_data[subdata], clstr_order, args, "simil", log)
+
+        #Generates graphics.
+        if "2" in args.p:
+          if os.path.isdir(save_graphics_dir) == False:
+            os.mkdir(save_graphics_dir)
+
+          print("Generating frequency distribution plot of pairwise sequence alignment distance…")
+          create_freqplot(all_data)
+          print("Done.")
+
+          print("Generating heatmap plot of pairwise sequence alignment distance…")
+          create_njheatmap(all_data, nj_order, args, "nj", type_header, log)
+          create_njheatmap(all_data, mltree_order, args, "phylogeny", type_header, log)
+          if args.k != None and args.k != "nj":
+            create_clustermap(all_data, args, type_header, log)
+          print("Done.")
+
+        all_data = {}
+
+
+    #Prints and writes that it's not possible run methods 3 and 4 without PDB files directory (-s)
+    part2 = "no"
+    if "3" in args.p or "4" in args.p or "3" in clust_cmd_list or "4" in clust_cmd_list:
+      part2 = "yes"
+    if args.s == None and part2 == "yes":
+      print("""
+WARNING:
+Not possible to run pairwise structural alignment ('3'),
+or pairwise 3di character alignment ('4').
+PDB files directory (-s) not specified.
+""")
+      log.write("""
+WARNING:
+Not possible to run pairwise structural alignment ('3'),
+or pairwise 3di character alignment ('4').
+PDB files directory (-s) not specified.
+""")
+    else:
+      if args.s != None and args.s.endswith("/"):
+        args.s = args.s[:-1]
+
+      if "3" in args.p or "3" in clust_cmd_list:
+        print("\nMethod: Structural alignment (TM-score)")
+        log.write("""
+********** Structural alignment (TM-score) **********
+""")
+        log.write("\nTM-align:\n")
+
+        #Runs TM-align program.
+        print("Running pairwise structural alignments with TM-align")
+        run_tmalign(args.s, args.o, log)
+        print("Pairwise structural alignments completed.")
+
+        #Extract the identity values from a already saved matrix or from TM-align result directories.
+        matrix_name = save_tmalign_dir+"/"+last_name_dir+"_tmscores_matrix.csv"
+        if os.path.isfile(matrix_name):
+          data = read_matrix_csv(matrix_name)
+        else:
+          data = data_from_tmalign(args.o)
+        save_matrix(data, matrix_name, log)
+
+        #Extract the maximum and minimum, intra and intergroup for the prefix groups.
+        if prefixes != None:
+          data_for_ranges_table["TM-score"] = create_range_table(matrix_name, prefixes, mean, std)
+
+        mean, std = save_matrix(data, matrix_name, log)
+        all_data[save_graphics_dir+"/"+last_name_dir+"_tmscores"] = data
+
+        log.write("\nTM-score outputs:\n")
+
+        #Performs the neighbor-joining clustering method.
+        nj_order = nj_tree(data,  "tmscores", args, log)
+        clstr_order = nj_order
+
+        #Performs the data partitioning or...
+        if clust_cmd_list and "3" in clust_cmd_list:
+          method_clust = "3"
+          log.write("\nData partitioning based on TM-score values:\n")
+          for subdata in all_data:
+            for range_clust in clust_cmd_list[method_clust]:
+              cluster_in_subdata([method_clust, range_clust[0], range_clust[1]], all_data[subdata], clstr_order, args, "simil", log)
+
+        #Generates graphics.
+        if "3" in args.p:
+          if os.path.isdir(save_graphics_dir) == False:
+            os.mkdir(save_graphics_dir)
+
+          print("Generating frequency distribution plot of pairwise sequence alignment distance…")
+          create_freqplot(all_data)
+          print("Done.")
+
+          print("Generating heatmap plot of pairwise sequence alignment distance…")
+          create_njheatmap(all_data, nj_order, args, "nj", type_header, log)
+          if args.k != None and args.k != "nj":
+            create_clustermap(all_data, args, type_header, log)
+          print("Done.")
+
+        all_data = {}
+
+
+      if "4" in args.p or "4" in clust_cmd_list:
+        if "/" in args.s:
+          entry_last_name_dir = args.s.split("/")[-1]
+        else:
+          entry_last_name_dir = args.s
+
+        print("\nMethod: pairwise 3Di-character alignment")
+        log.write("""
+********** 3Di Similarity **********
+""")
+        file_3Di = f"{args.o}/{entry_last_name_dir}_3Di.fasta"
+
+        log.write("\nFoldseek:\n")
+
+        #Runs Foldseek program if the 3Di FASTA file doesn't exists.
+        if os.path.isfile(file_3Di) == False:
+          print("Converting PDB to 3Di-character sequences with Foldseek")
+          log.write("\nRunning Foldseek:\n")
+          run_foldseek(args, log)
+          print("Conversion completed.\n")
+        else:
+          log.write(f"""- Skipping Foldseek run. Output files already exists:
+  - {file_3Di}\n""")
+          print("3Di and aa/3Di FASTA files already exist. Skipping Foldseek run.")
+
+
+        #Runs needle program if the 3Di .needle file doesn't exists.
+        needle_file = f'{args.o}/needle3Di_dir/{last_name_dir}_3Di_simil.needle'
+        log.write("\nNeedle (3Di characters alignment):\n")
+        if os.path.isfile(needle_file) == False:
+          print("Running pairwise 3Di-character sequence alignments with needle…")
+          run_needle3Di(file_3Di, args.o)
+          print("Pairwise 3Di-character sequence alignments completed.")
+        else:
+          log.write("- Needle 3Di similarity file already exists. Skipping Needle run.\n")
+          print("Needle 3Di similarity file already exists. Skipping Needle run.")
+
+        #Extract the identity values from a already saved matrix or from .needle file.
+        matrix_name = save_3Dineedle_dir+"/"+last_name_dir+"_3Di_simil_matrix.csv"
+        if os.path.isfile(matrix_name):
+          data = read_matrix_csv(matrix_name)
+        else:
+          data = data_from_needle3Di(needle_file, "3di")
+        mean, std = save_matrix(data, matrix_name, log)
+
+        #Extract the maximum and minimum, intra and intergroup for the prefix groups.
+        if prefixes != None:
+          data_for_ranges_table["3Di similarity %"] = create_range_table(matrix_name, prefixes, mean, std)
+
+        all_data[save_graphics_dir+"/"+last_name_dir+"_3Di"] = data
+
+        log.write("\n3Di Similarity outputs:\n")
+
+        #Performs the neighbor-joining clustering method.
+        nj_order = nj_tree(data, "3Di", args, log)
+        clstr_order = nj_order
+
+        #Performs the data partitioning or...
+        if clust_cmd_list and "4" in clust_cmd_list:
+          method_clust = "4"
+          log.write("\nData partitioning based on 3Di character similarity values:\n")
+          for subdata in all_data:
+            for range_clust in clust_cmd_list[method_clust]:
+              cluster_in_subdata([method_clust, range_clust[0], range_clust[1]], all_data[subdata], clstr_order, args, "simil", log)
+
+        #Generates graphics.
+        if "4" in args.p:
+          if os.path.isdir(save_graphics_dir) == False:
+            os.mkdir(save_graphics_dir)
+
+          print("Generating frequency distribution plot of pairwise sequence alignment distance…")
+          create_freqplot(all_data)
+          print("Done.")
+
+          print("Generating heatmap plot of pairwise sequence alignment distance…")
+          create_njheatmap(all_data, nj_order, args, "nj", type_header, log)
+          if args.k != None and args.k != "nj":
+            create_clustermap(all_data, args, type_header, log)
+          print("Done.")
+
+        all_data = {}
+
+    #Saves the ranges of comparisons of the prefix groups in csv format.
+    if prefixes:
+      save_results_to_csv(data_for_ranges_table, prefixes, args.o+"/metrics_ranges_table.csv", log)
+
+    print("\nExecution completed.")
+    log.write("\nExecution completed.")
