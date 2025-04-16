@@ -27,14 +27,15 @@ simplefilter("ignore", UserWarning)
 simplefilter("ignore", hierarchy.ClusterWarning)
 
 #Set version
-version = "1.01"
+version = "1.02"
+date_version = "11 apr 2025"
 
 #Count how much cpu core are in PC
 num_threads = cpu_count()
 
 #Set a help message
 help = """
-MPACT - Multimetric PAirwise Comparison Tool version """+version+""" - 10 apr 2025
+MPACT - Multimetric PAirwise Comparison Tool version """+version+""" - """+date_version+"""
 This program perform all-against-all pairwise comparisons for biological sequences 
 and protein structures with five diferent metrics. The results are presented in 
 heatmap graph, frequency distribution, trees and matrices.
@@ -139,6 +140,12 @@ args = parser.parse_args()
 
 #Define accessory functions.
 
+def write_log(logfile, message):
+  """Writes a message in the log file."""
+  with open(logfile, 'a') as f:
+    f.write(message)
+    f.flush()
+
 def no_empty(x):
   """It removes empty strings of a list."""
   while '' in x:
@@ -160,8 +167,6 @@ def isInt(value):
     return True
   except:
     return False
-
-
 
 
 def configuration_file(args):
@@ -723,7 +728,7 @@ def log_header(log, args, type_sequence, type_header, clust_cmd_list ,version):
   else:
     log_prefixes = "NOT SPECIFIED"
 
-  log.write(f"""MPACT - Multimetric PAirwise Comparison Tool version {version} - 24 jan 2025
+  write_log(logfile, f"""MPACT - Multimetric PAirwise Comparison Tool version {version} - 24 jan 2025
 (c) 2025. Igor Custódio dos Santos & Arthur Gruber
 
 ***Logfile (Date: {formatted_date})***
@@ -889,12 +894,12 @@ def correct_label(data, args, type_header, type_file, order):
 
     return data, new_order
 
-def run_needle(fasta_file, output_dir, type_header, type_sequence, log):
+def run_needle(fasta_file, output_dir, type_header, type_sequence, logfile):
   """Run needle program"""
   save_needle_dir = f"{output_dir}/needle_dir"
   if "/" in output_dir:
     output_dir = output_dir.split("/")[-1]
-  log.write(f"- Saving in directory: {output_dir}/needle_dir\n")
+  write_log(logfile, f"- Saving in directory: {output_dir}/needle_dir\n")
   if os.path.isdir(save_needle_dir) == False:
     os.mkdir(save_needle_dir)
 
@@ -926,45 +931,49 @@ def run_needle(fasta_file, output_dir, type_header, type_sequence, log):
   #Sets the command to run the needle.
   if type_sequence == 'protein':
     needle_modelcmd_aa = f"needle -sprotein1 sequence.fasta -sprotein2 restofsequences.fasta -gapopen 10.0 -gapextend 0.5 -datafile EBLOSUM62 -outfile temp_out_file.needle >stdout_needle_file"
-    log.write(f"- Command model of Needle for protein sequences: {needle_modelcmd_aa}\n")
+    write_log(logfile, f"- Command model of Needle for protein sequences: {needle_modelcmd_aa}\n")
   if type_sequence == 'nucleotide':
     needle_modelcmd_nucleotide = f"needle -snucleotide1 sequence.fasta -snucleotide2 restofsequences.fasta -gapopen 10.0 -gapextend 0.5 -datafile EDNAFULL -outfile temp_out_file.needle >stdout_needle_file"
-    log.write(f"- Command model of Needle for nucleotide sequences: {needle_modelcmd_nucleotide}\n")
+    write_log(logfile, f"- Command model of Needle for nucleotide sequences: {needle_modelcmd_nucleotide}\n")
 
   #Sets FASTA files of one sequence and all subsequent sequences, respectively.
+  t = len(sequences)
+  i = 1
   for seq in sequences:
     in_seq = seq[0][1:].split(' ')[0]
     in_seq_file = save_needle_dir+"/"+seq[0][1:].split(' ')[0]+'.fasta'
     out_seq_file = save_needle_dir+"/"+seq[0][1:].split(' ')[0]+'.needle'
     with open(in_seq_file, 'w') as arquivo:
       arquivo.write('\n'.join(seq))
-    with open(save_needle_dir+"/"+'compared_sequences.fasta', 'w') as arquivo:
+    with open(save_needle_dir+"/"+'subsequent_sequences.fasta', 'w') as arquivo:
       for l in sequences[sequences.index(seq):]:
         arquivo.write('\n'.join(l)+'\n')
 
+    if type_sequence == 'protein':
+      needle_cmd = f"needle -sprotein1 {in_seq_file} -sprotein2 {save_needle_dir}/subsequent_sequences.fasta -gapopen 10.0 -gapextend 0.5 -datafile EBLOSUM62 -outfile {out_seq_file} >{stdout_needle_file}"
+    if type_sequence == 'nucleotide':
+      needle_cmd = f"needle -snucleotide1 {in_seq_file} -snucleotide2 {save_needle_dir}/subsequent_sequences.fasta -gapopen 10.0 -gapextend 0.5 -datafile EDNAFULL -outfile {out_seq_file} >{stdout_needle_file}"
+
+    print(f"Running Needle with {in_seq}... ({i}/{t})")
+    write_log(logfile, f"\nRunning Needle with {in_seq}... ({i}/{t})\n- COMMAND: {needle_cmd}\n")
+
     #Runs the needle program.
     try:
-      if type_sequence == 'protein':
-        needle_cmd_aa = f"needle -sprotein1 {in_seq_file} -sprotein2 {save_needle_dir}/compared_sequences.fasta -gapopen 10.0 -gapextend 0.5 -datafile EBLOSUM62 -outfile {out_seq_file} >{stdout_needle_file}"
-        subprocess.call(needle_cmd_aa, shell = True)
-
-      if type_sequence == 'nucleotide':
-        needle_cmd_nucleotide = f"needle -snucleotide1 {in_seq_file} -snucleotide2 {save_needle_dir}/compared_sequences.fasta -gapopen 10.0 -gapextend 0.5 -datafile EDNAFULL -outfile {out_seq_file} >{stdout_needle_file}"
-        subprocess.call(needle_cmd_nucleotide, shell = True)
-
+      subprocess.call(needle_cmd, shell = True)
     except Exception as erro_needle:
-      log.write(f"\nError at running Needle:\n{erro_needle}")
+      write_log(logfile, f"\nError at running Needle:\n{erro_needle}")
       print(f"Error at running Needle:\n{erro_needle}")
       sys.exit
 
     #Concatenate the results in .needle file and remove intermediate files.
     os.remove(in_seq_file)
-    os.remove(save_needle_dir+"/"+'compared_sequences.fasta')
+    os.remove(save_needle_dir+"/"+'subsequent_sequences.fasta')
     with open(out_seq_file, 'r') as open_moment_needle:
       with open(needle_file, 'a') as open_needle:
         for line in open_moment_needle:
           open_needle.write(line)
     os.remove(out_seq_file)
+    i += 1
 
 def data_from_needle(file, type_sequence, metric):
   """Extract the Identity and Similarity values from needle output file and returns a list of comparisons"""
@@ -1001,7 +1010,7 @@ def data_from_needle(file, type_sequence, metric):
     elif metric == "simil":
       return data_sim
 
-def save_matrix(perc_list, save_path, log):
+def save_matrix(perc_list, save_path, logfile):
   """Save a csv format matrix of all-against-all comparisons"""
   matrix_name = save_path
 
@@ -1060,7 +1069,7 @@ def save_matrix(perc_list, save_path, log):
   range_log = max(matrix_inline) - min(matrix_inline)
 
   #Write the results on the logfile.
-  log.write(f"""
+  write_log(logfile, f"""
 {matrix_title_log} matrix in csv format ({matrix_name}):
 {final_csv}
 
@@ -1095,7 +1104,7 @@ def read_matrix_csv(matrix_name):
 
   return data
 
-def nj_tree(perc_list, type_metric, args, log):
+def nj_tree(perc_list, type_metric, args, logfile):
   """Generate a neighbor-joining tree from a distance matrix"""
   if "/" in args.o:
     last_name_dir = args.o.split("/")[-1]
@@ -1221,7 +1230,7 @@ def make_mltree_order(perc_list, treefile, args, name_ordered_mltree):
 
   return mltree_order
 
-def run_mafft(fasta_file, output, cmd_mafft, log):
+def run_mafft(fasta_file, output, cmd_mafft, logfile):
   """Run multiple sequence alignment with MAFFT program"""
   if "/" in args.o:
     last_name_dir = output.split("/")[-1]
@@ -1232,7 +1241,7 @@ def run_mafft(fasta_file, output, cmd_mafft, log):
   save_align_dir = f"{output}/mafft_dir"
   if "/" in output:
     output = output.split("/")[-1]
-  log.write(f"- Saving in directory: {save_align_dir}\n")
+  write_log(logfile, f"- Saving in directory: {save_align_dir}\n")
   if os.path.isdir(save_align_dir) == False:
     os.mkdir(save_align_dir)
   real_path_fasta = os.path.realpath(fasta_file)
@@ -1241,10 +1250,10 @@ def run_mafft(fasta_file, output, cmd_mafft, log):
 
   #Sets the command and runs MAFFT multiple sequence alignment.
   cmd = 'mafft '+cmd_mafft+' '+real_path_fasta+' > '+real_path_output+' 2> '+error_out
-  log.write(f"- MAFFT command: {cmd}\n")
+  write_log(logfile, f"- MAFFT command: {cmd}\n")
   subprocess.call(cmd, shell=True)
 
-def run_iqtree(align_file, output, cmd_iqtree, align, log):
+def run_iqtree(align_file, output, cmd_iqtree, align, logfile):
   """Run phylogenetic reconstruction with IQ-TREE program"""
   if "/" in args.o:
     last_name_dir = output.split("/")[-1]
@@ -1256,7 +1265,7 @@ def run_iqtree(align_file, output, cmd_iqtree, align, log):
   method = ""
 
   save_iqtree_dir = f"{output}/{save_dir}"
-  log.write(f"- Saving in directory: {save_iqtree_dir}\n")
+  write_log(logfile, f"- Saving in directory: {save_iqtree_dir}\n")
   if os.path.isdir(save_iqtree_dir) == False:
     os.mkdir(save_iqtree_dir)
 
@@ -1269,7 +1278,7 @@ def run_iqtree(align_file, output, cmd_iqtree, align, log):
   #Sets the command and runs IQ-TREE phylogenetic reconstruction.
   cmd = f"iqtree2 -s {real_path_align} {cmd_iqtree} 1>{error_out} 2>{error_out2}"
 
-  log.write(f"- IQ-TREE command: {cmd}\n")
+  write_log(logfile, f"- IQ-TREE command: {cmd}\n")
   try:
     subprocess.call(cmd, shell=True)
   except Exception as err:
@@ -1281,7 +1290,7 @@ def run_iqtree(align_file, output, cmd_iqtree, align, log):
     print("Parameter -m of IQTREE is not valid. Please correct your sintaxe.")
     sys.exit()
 
-def data_from_mldist(mldist_file, log):
+def data_from_mldist(mldist_file, logfile):
   """Extract the maximum likelihood values from IQ-TREE results (.mldist file)"""
   data = []
   with open(mldist_file, 'r') as arquivo:
@@ -1293,7 +1302,7 @@ def data_from_mldist(mldist_file, log):
         data.append([line.split()[0], lines[j].split()[0], round(float(distance), 4)])
   return data
 
-def run_tmalign(input_dir, output, log):
+def run_tmalign(input_dir, output, logfile):
   """Run pairwise structural alignment with TM-align program"""
   if "/" in args.o:
     last_name_dir = output.split("/")[-1]
@@ -1301,7 +1310,7 @@ def run_tmalign(input_dir, output, log):
     last_name_dir = output
 
   output_tmalign = f"{output}/TMalign_dir"
-  log.write(f"- Saving in directory: {output_tmalign}\n")
+  write_log(logfile, f"- Saving in directory: {output_tmalign}\n")
   if os.path.isdir(output_tmalign) == False:
     os.mkdir(output_tmalign)
 
@@ -1322,9 +1331,11 @@ def run_tmalign(input_dir, output, log):
         continue
       combinations.append([yfile, xfile])
 
-  log.write("- TM-align command model: TMalign pdb_file1 pdb_file2 -o directory_output -a T 1>tmalign.log\n")
+  write_log(logfile, "- TM-align command model: TMalign pdb_file1 pdb_file2 -o directory_output -a T 1>tmalign.log\n")
 
   #Sets the names of the output directories
+  t = len(combinations)
+  i = 1
   for pair in combinations:
     in_filex = pair[0]
     in_filey = pair[1]
@@ -1352,7 +1363,8 @@ def run_tmalign(input_dir, output, log):
     tmalign_cmd += f"-o {output_tmalign}/{out1}_x_{out2}/{out1}_x_{out2} "
     tmalign_cmd += f"-a T 1>{output_tmalign}/{out1}_x_{out2}/{out1}_x_{out2}.log"
 
-    print(f"Running TM-align with {pair[0]} vs {pair[1]}.")
+    print(f"Running TM-align with {pair[0]} vs {pair[1]}... ({i}/{t})")
+    write_log(logfile, f"\nRunning TM-align with {pair[0]} vs {pair[1]}... ({i}/{t})\n- COMMAND: {tmalign_cmd}\n")
 
     #Runs TM-align pairwise structural alignment.
     try:
@@ -1377,6 +1389,8 @@ def run_tmalign(input_dir, output, log):
       os.rename(f"{input_dir}/'{in_filex}'", f"{input_dir}/'{pair[0]}'")
     if len(pair[1]) >= 90:
       os.rename(f"{input_dir}/'{in_filey}'", f"{input_dir}/'{pair[1]}'")
+
+    i += 1
 
 def data_from_tmalign(output):
   """Extract TM-score values from TM-align program directory results and return a list of comparisons"""
@@ -1413,7 +1427,7 @@ def data_from_tmalign(output):
   return data
 
 
-def run_foldseek(args, log):
+def run_foldseek(args, logfile):
   """Run 3Di alphabet prediction with Foldseek program and organize the output sequences"""
   if "/" in args.o:
     last_name_dir = args.o.split("/")[-1]
@@ -1430,7 +1444,7 @@ def run_foldseek(args, log):
     args.s = args.s[:-1]
   if os.path.isdir(f"{args.o}/foldseek_dir") == False:
     os.mkdir(f"{args.o}/foldseek_dir")
-  log.write(f"- Saving in: {args.o}/foldseek_dir\n")
+  write_log(logfile, f"- Saving in: {args.o}/foldseek_dir\n")
   if args.s != None and args.s.endswith("/"):
     entry_pdbs = f'{args.s}*'
   else:
@@ -1447,10 +1461,10 @@ def run_foldseek(args, log):
   try:
     foldseek_cmd = f'foldseek structureto3didescriptor -v 0 --threads {num_threads} --chain-name-mode 1 {entry_pdbs} {to_foldseek_out} >{erro1} 2>{erro2}'
     subprocess.call(foldseek_cmd, shell = True)
-    log.write(f'- Foldseek command: {foldseek_cmd}\n')
+    write_log(logfile, f'- Foldseek command: {foldseek_cmd}\n')
   except Exception as err:
     print("Foldseek reported an error:\n\n"+str(err))
-    log.write("\nFoldseek reported an error:\n\n"+str(err)+"\n")
+    write_log(logfile, "\nFoldseek reported an error:\n\n"+str(err)+"\n")
     sys.exit
 
   #Inspects the output file of Foldseek.
@@ -1459,7 +1473,7 @@ def run_foldseek(args, log):
   entry = f'{to_foldseek_out}'
   file_3Di = f"{args.o}/{entry_last_name_dir}_3Di.fasta"
 
-  log.write(f"""- FASTA file with 3Di characters: {file_3Di}
+  write_log(logfile, f"""- FASTA file with 3Di characters: {file_3Di}
 """)
 
   with open(entry, "r") as foldseek_file:
@@ -1488,7 +1502,7 @@ def run_needle3Di(fasta_3Difile, output_dir):
 
   output_dir = os.path.realpath(output_dir)
   save_needle3Di_dir = f"{output_dir}/needle3Di_dir"
-  log.write(f"- Saving in: {save_needle3Di_dir}\n")
+  write_log(logfile, f"- Saving in: {save_needle3Di_dir}\n")
 
   if os.path.isdir(save_needle3Di_dir) == False:
     os.mkdir(save_needle3Di_dir)
@@ -1551,39 +1565,43 @@ def run_needle3Di(fasta_3Difile, output_dir):
     open_needle.write("")
 
   #Writes the command to run the needle on logfile.
-  log.write("- Command model of Needle (3Di characters alignment): ")
-  log.write(f"needle -asequence sequence.fasta -bsequence restofsequences.fasta -gapopen 8.0 -gapextend 2.0 -datafile {name_of_3di_matrix} -aformat3 pair -outfile temp_out_file.needle\n")
+  write_log(logfile, "- Command model of Needle (3Di characters alignment): ")
+  write_log(logfile, f"needle -asequence sequence.fasta -bsequence restofsequences.fasta -gapopen 8.0 -gapextend 2.0 -datafile {name_of_3di_matrix} -aformat3 pair -outfile temp_out_file.needle\n")
 
   #Sets FASTA files of one sequence and all subsequent sequences, respectively.
+  t = len(seqs)
+  i = 1
   for seq in seqs:
     in_seq = seq[0][1:].split(' ')[0]
     in_seq_file = save_needle3Di_dir+"/"+seq[0][1:].split(' ')[0]+'.fasta'
     out_seq_file = save_needle3Di_dir+"/"+seq[0][1:].split(' ')[0]+'.needle'
     with open(in_seq_file, 'w') as file_3Di:
       file_3Di.write('\n'.join(seq))
-    with open(save_needle3Di_dir+"/compared_sequences.fasta", 'w') as file_3Di:
+    with open(save_needle3Di_dir+"/subsequent_sequences.fasta", 'w') as file_3Di:
       for l in seqs[seqs.index(seq):]:
         file_3Di.write('\n'.join(l)+'\n')
 
+    needle3di_cmd = f"needle -asequence {in_seq_file} -bsequence {save_needle3Di_dir}/subsequent_sequences.fasta -gapopen 8.0 -gapextend 2.0 -datafile {name_of_3di_matrix} -aformat3 pair -outfile {out_seq_file} >{stdout_needle_file}"
+
+    print(f"Running Needle with {in_seq}... ({i}/{t})")
+    write_log(logfile, f"\nRunning Needle with {in_seq}... ({i}/{t})\n- COMMAND: {needle3di_cmd}\n")
+
     #Runs the needle program.
     try:
-      needle3di_cmd = f"needle -asequence {in_seq_file} -bsequence {save_needle3Di_dir}/compared_sequences.fasta -gapopen 8.0 -gapextend 2.0 -datafile {name_of_3di_matrix} -aformat3 pair -outfile {out_seq_file} >{stdout_needle_file}"
       subprocess.call(needle3di_cmd, shell = True)
     except:
       print("Error at running Needle.")
       sys.exit
-    else:
-      print(f"Running Needle with {in_seq}...")
-      time.sleep(1)
 
     #Concatenate the results in .needle file and remove intermediate files.
     os.remove(in_seq_file)
-    os.remove(save_needle3Di_dir+"/compared_sequences.fasta")
+    os.remove(save_needle3Di_dir+"/subsequent_sequences.fasta")
     with open(out_seq_file, 'r') as open_moment_needle:
       with open(needle_file, 'a') as open_needle:
         for line in open_moment_needle:
           open_needle.write(line)
     os.remove(out_seq_file)
+    i += 1
 
 def data_from_needle3Di(file, type_sequence):
   """Extract 3Di character similarity values and return a list of comparisons"""
@@ -1623,11 +1641,11 @@ def score_to_dist25di(data):
 
   return dist_data
 
-def create_clustermap(all_data, args, type_header, log):
+def create_clustermap(all_data, args, type_header, logfile):
   """Create heatmep with clustermap function and save the dendrogram of the method of cluster."""
   for data in all_data:
     print("Generating clustermap file: "+data+"_"+args.k)
-    log.write("- Clustermap file: "+data+"_"+args.k+"\n")
+    write_log(logfile, "- Clustermap file: "+data+"_"+args.k+"\n")
 
     #Sets names of the graghic files.
     pdf_file_name = data + '_'+args.k+'.pdf'
@@ -1809,15 +1827,15 @@ def create_clustermap(all_data, args, type_header, log):
     return labels
 
 
-def create_njheatmap(all_data, nj_order, args, order_type, type_header, log):
+def create_njheatmap(all_data, nj_order, args, order_type, type_header, logfile):
   """Create heatmap with heatmap function"""
   for data in all_data:
     if order_type == "nj":
       print("Generating Neighbor-Joining heatmap file: "+data+"_"+order_type)
-      log.write("- Neighbor-joining heatmap file: "+data+"_"+order_type+"\n")
+      write_log(logfile, "- Neighbor-joining heatmap file: "+data+"_"+order_type+"\n")
     elif order_type == "phylogeny":
       print("Generating phylogeny heatmap file: "+data+"_"+order_type)
-      log.write("- Phylogeny heatmap file: "+data+"_"+order_type+"\n")
+      write_log(logfile, "- Phylogeny heatmap file: "+data+"_"+order_type+"\n")
 
     #Sets names of the graghic files.
     jpg_file_name = data + '_'+order_type+'.jpg'
@@ -1956,7 +1974,7 @@ def create_njheatmap(all_data, nj_order, args, order_type, type_header, log):
     plt.savefig(svg_file_name, dpi=400, format='svg', bbox_inches="tight")
     plt.clf()
 
-def cluster_in_subdata(clust_cmd_list, subdata, order, args, align_type, log):
+def cluster_in_subdata(clust_cmd_list, subdata, order, args, align_type, logfile):
   """Execute the data partitioning, according to user-defined thresolds"""
 
   print("\nData partitioning in execution...")
@@ -1972,13 +1990,13 @@ def cluster_in_subdata(clust_cmd_list, subdata, order, args, align_type, log):
   upper_limit = float(clust_cmd_list[2])
   cmd_clust = f"{method_partitioning},{lower_limit},{upper_limit}"
   if method_partitioning in ["0", "1", "4"]:
-    log.write(f"- Partitioning argument (-g): {cmd_clust} ({lower_limit}% to {upper_limit}% of {method_partit_dict[method_partitioning]})\n")
+    write_log(logfile, f"- Partitioning argument (-g): {cmd_clust} ({lower_limit}% to {upper_limit}% of {method_partit_dict[method_partitioning]})\n")
     print(f"- Partitioning argument (-g): {cmd_clust} ({lower_limit}% to {upper_limit}% of {method_partit_dict[method_partitioning]})")
   elif method_partitioning in ["2", "3"]:
-    log.write(f"- Partitioning argument (-g): {cmd_clust} ({lower_limit} to {upper_limit} of {method_partit_dict[method_partitioning]})\n")
+    write_log(logfile, f"- Partitioning argument (-g): {cmd_clust} ({lower_limit} to {upper_limit} of {method_partit_dict[method_partitioning]})\n")
     print(f"- Partitioning argument (-g): {cmd_clust} ({lower_limit} to {upper_limit} of {method_partit_dict[method_partitioning]})")
 
-  log.write(f"\nOrder of comparison: {';'.join(order)}\n")
+  write_log(logfile, f"\nOrder of comparison: {';'.join(order)}\n")
 
   #Remove redundant comparisons.
   new_subdata = []
@@ -2000,7 +2018,7 @@ def cluster_in_subdata(clust_cmd_list, subdata, order, args, align_type, log):
   for query in order:
     if query in sequences_in:
       continue
-    log.write(f"Cluster {i} (HEAD: {query}):\n")
+    write_log(logfile, f"Cluster {i} (HEAD: {query}):\n")
     l = 1
     subgroup = [query]
     for comp in subdata:
@@ -2009,20 +2027,20 @@ def cluster_in_subdata(clust_cmd_list, subdata, order, args, align_type, log):
           already_in.append(comp)
           if comp[2] > lower_limit and comp[2] < upper_limit:
             if comp[0] == query and comp[1] not in subgroup:
-              log.write(f"- {comp[2]} with {comp[1]} (In range... ACCEPTED IN CLUSTER {i})\n")
+              write_log(logfile, f"- {comp[2]} with {comp[1]} (In range... ACCEPTED IN CLUSTER {i})\n")
               subgroup.append(comp[1])
               sequences_in.append(comp[1])
               l+=1
             else:
-              log.write(f"- {comp[2]} with {comp[0]} (In range... ACCEPTED IN CLUSTER {i})\n")
+              write_log(logfile, f"- {comp[2]} with {comp[0]} (In range... ACCEPTED IN CLUSTER {i})\n")
               subgroup.append(comp[0])
               sequences_in.append(comp[0])
               l+=1
           else:
             if comp[0] == query and comp[1] not in subgroup:
-              log.write(f"- {comp[2]} with {comp[1]} (Out of range...)\n")
+              write_log(logfile, f"- {comp[2]} with {comp[1]} (Out of range...)\n")
             else:
-              log.write(f"- {comp[2]} with {comp[0]} (Out of range...)\n")
+              write_log(logfile, f"- {comp[2]} with {comp[0]} (Out of range...)\n")
     for seq in subgroup:
       for comp in subdata:
         if seq in comp and comp not in already_in:
@@ -2030,7 +2048,7 @@ def cluster_in_subdata(clust_cmd_list, subdata, order, args, align_type, log):
     outgroups["{}cl{}s".format(i, l)] = subgroup
     print(f"- Cluster {i} ({i}cl{l}s): {','.join(subgroup)}.")
     cluster_report.append(f"  * Cluster {i} ({i}cl{l}s): {','.join(subgroup)}.\n")
-    log.write("\n")
+    write_log(logfile, "\n")
     i+=1
 
   method_for_name = {"0": "ident", "1": "simil", "2": "mldist", "3": "tm", "4": "3di"}
@@ -2041,10 +2059,10 @@ def cluster_in_subdata(clust_cmd_list, subdata, order, args, align_type, log):
   if os.path.isdir(dict_clstr) == False:
     os.mkdir(dict_clstr)
 
-  log.write(f"Data partitioning report (Directory: {dict_clstr}):\n")
+  write_log(logfile, f"Data partitioning report (Directory: {dict_clstr}):\n")
   for line_report in cluster_report:
-    log.write(line_report)
-  log.write("\n")
+    write_log(logfile, line_report)
+  write_log(logfile, "\n")
 
   #Writes the resulting clusters from input FASTA file.
   if clust_cmd_list[0] == "0" or clust_cmd_list[0] == "1" or clust_cmd_list[0] == "2":
@@ -2118,7 +2136,7 @@ def create_freqplot(all_data):
   """Create the frequency distribuition plot."""
   for data in all_data:
     print(f"Generating frequency plot file: {data}_freqplot")
-    log.write("- Frequency plot file: "+data+"_freqplot\n")
+    write_log(logfile, "- Frequency plot file: "+data+"_freqplot\n")
 
     #Sets names of the graghic files.
     jpg_file_name = data + '_freqplot.jpg'
@@ -2249,7 +2267,7 @@ def create_range_table(csv_file, prefixes, mean, std):
 
   return results
 
-def save_results_to_csv(results, prefixes, output_file, log):
+def save_results_to_csv(results, prefixes, output_file, logfile):
   """Save the results dictionary in a CSV file."""
   range_table = {}
 
@@ -2278,7 +2296,7 @@ def save_results_to_csv(results, prefixes, output_file, log):
   ranges_csv = results_df.to_csv(index = False)
   results_df.to_csv(output_file, sep=';', encoding='utf-8', index=False)
 
-  log.write(f"""
+  write_log(logfile, f"""
 
 Range table based on tags/prefixes:
 
@@ -2297,11 +2315,11 @@ if __name__ == '__main__':
   #Print version message if it's called (-v)
   elif args.version == True:
     print("""
-MPACT - Multimetric PAirwise Comparison Tool version """+version+""" - 24 jan 2025
+MPACT - Multimetric PAirwise Comparison Tool version """+version+""" - """+date_version+"""
 This program perform all-against-all pairwise comparisons for biological sequences 
 and protein structures with five diferent metrics. The results are presented in 
 heatmap graph, frequency distribution, trees and matrices.
-(c) 2024. Igor Custódio dos Santos & Arthur Gruber
+(c) 2025. Igor Custódio dos Santos & Arthur Gruber
 """)
   else:
     #Set parameters according to configuration file if it's specified (-conf)
@@ -2357,9 +2375,9 @@ heatmap graph, frequency distribution, trees and matrices.
     with open(logfile, "w") as log_open:
       log_open.write("")
 
-    log = open(logfile, "a")
+#    log = open(logfile, "a")
 
-    log_header(log, args, type_sequence, type_header, clust_cmd_list, version)
+    log_header(logfile, args, type_sequence, type_header, clust_cmd_list, version)
 
     all_data = {}
 
@@ -2377,7 +2395,7 @@ Not possible to run pairwise aa/nucleotide sequence alignment ('0' and '1')
 or maximum likelihood ('2').
 FASTA file (-i) not specified.
 """)
-      log.write("""
+      write_log(logfile, """
 WARNING:
 Not possible to run pairwise aa/nucleotide sequence alignment ('0' and '1') 
 or maximum likelihood ('2').
@@ -2386,7 +2404,7 @@ FASTA file (-i) not specified.
     else:
 
       if "0" in args.p or "1" in args.p or "0" in clust_cmd_list or "1" in clust_cmd_list:
-        log.write("""
+        write_log(logfile, """
 ***** Pairwise Alignment *****
 """)
 
@@ -2394,19 +2412,19 @@ FASTA file (-i) not specified.
 
         #Runs needle program if the .needle file doesn't exists.
         if os.path.isfile(save_needle_dir+"/"+last_name_dir+".needle"):
-          log.write("""
+          write_log(logfile, """
 - Needle file already exists. Skipping Needle run.
 - Using data from: """+save_needle_dir+"/"+args.o+".needle\n")
           print("Needle file already exists. Skipping Needle run.")
         else:
-          log.write("\nNeedle\n")
+          write_log(logfile, "\nNeedle\n")
           print("Running pairwise sequence alignments with needle…")
-          run_needle(args.i, args.o, type_header, type_sequence, log)
+          run_needle(args.i, args.o, type_header, type_sequence, logfile)
           print("Pairwise sequence alignments completed.")
 
         #Identity protocol execution
         if "0" in args.p or "0" in clust_cmd_list:
-          log.write("""
+          write_log(logfile, """
 ********** Identity Protocol **********
 """)
           print("\nIdentity protocol")
@@ -2419,7 +2437,7 @@ FASTA file (-i) not specified.
           else:
             print(save_needle_dir+"/"+last_name_dir+".needle", type_sequence, 'ident')
             data = data_from_needle(save_needle_dir+"/"+last_name_dir+".needle", type_sequence, 'ident')
-          mean, std = save_matrix(data, matrix_name, log)
+          mean, std = save_matrix(data, matrix_name, logfile)
 
           #Extract the maximum and minimum, intra and intergroup for the prefix groups.
           if prefixes != None:
@@ -2427,19 +2445,19 @@ FASTA file (-i) not specified.
 
           all_data[save_graphics_dir+"/"+last_name_dir+"_ident"] = data
 
-          log.write("\nIdentity outputs:\n")
+          write_log(logfile, "\nIdentity outputs:\n")
 
           #Performs the neighbor-joining clustering method.
-          nj_order = nj_tree(data, "ident", args, log)
+          nj_order = nj_tree(data, "ident", args, logfile)
           clstr_order = nj_order
 
           #Performs the data partitioning or...
           if clust_cmd_list and "0" in clust_cmd_list:
             method_clust = "0"
-            log.write("\nData partitioning based on Identity values:\n")
+            write_log(logfile, "\nData partitioning based on Identity values:\n")
             for subdata in all_data:
               for range_clust in clust_cmd_list[method_clust]:
-                cluster_in_subdata([method_clust, range_clust[0], range_clust[1]], all_data[subdata], clstr_order, args, "ident", log)
+                cluster_in_subdata([method_clust, range_clust[0], range_clust[1]], all_data[subdata], clstr_order, args, "ident", logfile)
 
           #Generates graphics.
           if "0" in args.p:
@@ -2451,9 +2469,9 @@ FASTA file (-i) not specified.
             print("Done.")
 
             print("Generating heatmap plot of pairwise sequence alignment distance…")
-            create_njheatmap(all_data, nj_order, args, "nj", type_header, log)
+            create_njheatmap(all_data, nj_order, args, "nj", type_header, logfile)
             if args.k != None and args.k != "nj":
-              create_clustermap(all_data, args, type_header, log)
+              create_clustermap(all_data, args, type_header, logfile)
             print("Done.")
 
 
@@ -2462,7 +2480,7 @@ FASTA file (-i) not specified.
 
         #Similarity protocol execution
         if "1" in args.p or "1" in clust_cmd_list:
-          log.write("""
+          write_log(logfile, """
 ********** Similarity Protocol **********
 """)
           print("\nSimilarity protocol")
@@ -2474,7 +2492,7 @@ FASTA file (-i) not specified.
             data = read_matrix_csv(matrix_name)
           else:
             data = data_from_needle(save_needle_dir+"/"+last_name_dir+".needle", type_sequence, 'simil')
-          mean, std = save_matrix(data, matrix_name, log)
+          mean, std = save_matrix(data, matrix_name, logfile)
 
           #Extract the maximum and minimum, intra and intergroup for the prefix groups.
           if prefixes != None:
@@ -2482,19 +2500,19 @@ FASTA file (-i) not specified.
 
           all_data[save_graphics_dir+"/"+last_name_dir+"_simil"] = data
 
-          log.write("\nSimilarity outputs:\n")
+          write_log(logfile, "\nSimilarity outputs:\n")
 
           #Performs the neighbor-joining clustering method.
-          nj_order = nj_tree(data, "simil", args, log)
+          nj_order = nj_tree(data, "simil", args, logfile)
           clstr_order = nj_order
 
           #Performs the data partitioning or...
           if clust_cmd_list and "1" in clust_cmd_list:
             method_clust = "1"
-            log.write("\nData partitioning based on Similarity values:\n")
+            write_log(logfile, "\nData partitioning based on Similarity values:\n")
             for subdata in all_data:
               for range_clust in clust_cmd_list[method_clust]:
-                cluster_in_subdata([method_clust, range_clust[0], range_clust[1]], all_data[subdata], clstr_order, args, "simil", log)
+                cluster_in_subdata([method_clust, range_clust[0], range_clust[1]], all_data[subdata], clstr_order, args, "simil", logfile)
 
           #Generates graphics.
           if "1" in args.p:
@@ -2506,9 +2524,9 @@ FASTA file (-i) not specified.
             print("Done.")
 
             print("Generating heatmap plot of pairwise sequence alignment distance…")
-            create_njheatmap(all_data, nj_order, args, "nj", type_header, log)
+            create_njheatmap(all_data, nj_order, args, "nj", type_header, logfile)
             if args.k != None and args.k != "nj":
-              create_clustermap(all_data, args, type_header, log)
+              create_clustermap(all_data, args, type_header, logfile)
             print("Done.")
 
           all_data = {}
@@ -2517,40 +2535,40 @@ FASTA file (-i) not specified.
 
       #Maximum-likelihood protocol execution
       if "2" in args.p or "2" in clust_cmd_list:
-        log.write("""
+        write_log(logfile, """
 ********** Maximum Likelihood Distance **********
 """)
         print("\nMethod: Maximum-likelihood distance")
 
-        log.write("\nMAFFT:\n")
+        write_log(logfile, "\nMAFFT:\n")
 
         #Runs MAFFT program if the alignment file doesn't exists.
         if os.path.isfile(save_align_dir+"/"+last_name_dir+".align"):
-          log.write("""- Multiple sequences alignment file already exists. Skipping MAFFT run.
+          write_log(logfile, """- Multiple sequences alignment file already exists. Skipping MAFFT run.
 - Using data from: {save_align_dir}/{last_name_dir}.align\n""")
           print("MAFFT aligned file already exists. Skipping MAFFT step.")
 
         else:
           print("Running multiple sequence alignment with MAFFT…")
-          run_mafft(args.i, args.o, cmd_mafft, log)
+          run_mafft(args.i, args.o, cmd_mafft, logfile)
           print("Multiple sequence alignment completed.")
 
         #Runs IQ-TREE program if the .mldist file doesn't exists.
-        log.write("\nMAFFT:\n")
+        write_log(logfile, "\nMAFFT:\n")
         if os.path.isfile(save_iqtree_dir+"/"+last_name_dir+".mldist"):
-          log.write(f"""- IQ-TREE maximum-likelihood distance matrix file already exists. Skipping IQ-TREE run.
+          write_log(logfile, f"""- IQ-TREE maximum-likelihood distance matrix file already exists. Skipping IQ-TREE run.
 - Using data from: {save_iqtree_dir}/{last_name_dir}.mldist\n""")
           print("IQ-TREE maximum-likelihood distance matrix file already exists. Skipping IQ-TREE step.")
 
         else:
           print("Running phylogenetic analysis IQ-TREE…")
-          run_iqtree(save_align_dir+"/"+last_name_dir+".align", args.o, cmd_iqtree, "aa", log)
+          run_iqtree(save_align_dir+"/"+last_name_dir+".align", args.o, cmd_iqtree, "aa", logfile)
           print("Phylogenetic analysis completed.")
 
-        data = data_from_mldist(save_iqtree_dir+"/"+last_name_dir+".mldist", log)
+        data = data_from_mldist(save_iqtree_dir+"/"+last_name_dir+".mldist", logfile)
 
         matrix_name = f"{save_iqtree_dir}/{last_name_dir}_mldist_matrix.csv"
-        mean, std = save_matrix(data, matrix_name, log)
+        mean, std = save_matrix(data, matrix_name, logfile)
 
         #Extract the maximum and minimum, intra and intergroup for the prefix groups.
         if prefixes != None:
@@ -2558,10 +2576,10 @@ FASTA file (-i) not specified.
 
         all_data[save_graphics_dir+"/"+last_name_dir+"_mldist"] = data
 
-        log.write("\nMaximum-likelihood distance outputs:\n")
+        write_log(logfile, "\nMaximum-likelihood distance outputs:\n")
 
         #Performs the neighbor-joining clustering method.
-        nj_order = nj_tree(data, "mldist", args, log)
+        nj_order = nj_tree(data, "mldist", args, logfile)
 
         name_mltree_ordered = save_iqtree_dir+"/"+last_name_dir+"_ordered.treefile"
         mltree_order = make_mltree_order(data, save_iqtree_dir+"/"+last_name_dir+".treefile", args, save_iqtree_dir+"/"+last_name_dir+"_ordered.treefile")
@@ -2570,10 +2588,10 @@ FASTA file (-i) not specified.
         #Performs the data partitioning or...
         if clust_cmd_list and "2" in clust_cmd_list:
           method_clust = "2"
-          log.write("\nData partitioning based on Maximum-likelihood distance values:\n")
+          write_log(logfile, "\nData partitioning based on Maximum-likelihood distance values:\n")
           for subdata in all_data:
             for range_clust in clust_cmd_list[method_clust]:
-              cluster_in_subdata([method_clust, range_clust[0], range_clust[1]], all_data[subdata], clstr_order, args, "simil", log)
+              cluster_in_subdata([method_clust, range_clust[0], range_clust[1]], all_data[subdata], clstr_order, args, "simil", logfile)
 
         #Generates graphics.
         if "2" in args.p:
@@ -2585,10 +2603,10 @@ FASTA file (-i) not specified.
           print("Done.")
 
           print("Generating heatmap plot of pairwise sequence alignment distance…")
-          create_njheatmap(all_data, nj_order, args, "nj", type_header, log)
-          create_njheatmap(all_data, mltree_order, args, "phylogeny", type_header, log)
+          create_njheatmap(all_data, nj_order, args, "nj", type_header, logfile)
+          create_njheatmap(all_data, mltree_order, args, "phylogeny", type_header, logfile)
           if args.k != None and args.k != "nj":
-            create_clustermap(all_data, args, type_header, log)
+            create_clustermap(all_data, args, type_header, logfile)
           print("Done.")
 
         all_data = {}
@@ -2605,7 +2623,7 @@ Not possible to run pairwise structural alignment ('3'),
 or pairwise 3di character alignment ('4').
 PDB files directory (-s) not specified.
 """)
-      log.write("""
+      write_log(logfile, """
 WARNING:
 Not possible to run pairwise structural alignment ('3'),
 or pairwise 3di character alignment ('4').
@@ -2617,14 +2635,14 @@ PDB files directory (-s) not specified.
 
       if "3" in args.p or "3" in clust_cmd_list:
         print("\nMethod: Structural alignment (TM-score)")
-        log.write("""
+        write_log(logfile, """
 ********** Structural alignment (TM-score) **********
 """)
-        log.write("\nTM-align:\n")
+        write_log(logfile, "\nTM-align:\n")
 
         #Runs TM-align program.
         print("Running pairwise structural alignments with TM-align")
-        run_tmalign(args.s, args.o, log)
+        run_tmalign(args.s, args.o, logfile)
         print("Pairwise structural alignments completed.")
 
         #Extract the identity values from a already saved matrix or from TM-align result directories.
@@ -2633,28 +2651,27 @@ PDB files directory (-s) not specified.
           data = read_matrix_csv(matrix_name)
         else:
           data = data_from_tmalign(args.o)
-        save_matrix(data, matrix_name, log)
+
+        mean, std = save_matrix(data, matrix_name, logfile)
+        all_data[save_graphics_dir+"/"+last_name_dir+"_tmscores"] = data
 
         #Extract the maximum and minimum, intra and intergroup for the prefix groups.
         if prefixes != None:
           data_for_ranges_table["TM-score"] = create_range_table(matrix_name, prefixes, mean, std)
 
-        mean, std = save_matrix(data, matrix_name, log)
-        all_data[save_graphics_dir+"/"+last_name_dir+"_tmscores"] = data
-
-        log.write("\nTM-score outputs:\n")
+        write_log(logfile, "\nTM-score outputs:\n")
 
         #Performs the neighbor-joining clustering method.
-        nj_order = nj_tree(data,  "tmscores", args, log)
+        nj_order = nj_tree(data,  "tmscores", args, logfile)
         clstr_order = nj_order
 
         #Performs the data partitioning or...
         if clust_cmd_list and "3" in clust_cmd_list:
           method_clust = "3"
-          log.write("\nData partitioning based on TM-score values:\n")
+          write_log(logfile, "\nData partitioning based on TM-score values:\n")
           for subdata in all_data:
             for range_clust in clust_cmd_list[method_clust]:
-              cluster_in_subdata([method_clust, range_clust[0], range_clust[1]], all_data[subdata], clstr_order, args, "simil", log)
+              cluster_in_subdata([method_clust, range_clust[0], range_clust[1]], all_data[subdata], clstr_order, args, "simil", logfile)
 
         #Generates graphics.
         if "3" in args.p:
@@ -2666,9 +2683,9 @@ PDB files directory (-s) not specified.
           print("Done.")
 
           print("Generating heatmap plot of pairwise sequence alignment distance…")
-          create_njheatmap(all_data, nj_order, args, "nj", type_header, log)
+          create_njheatmap(all_data, nj_order, args, "nj", type_header, logfile)
           if args.k != None and args.k != "nj":
-            create_clustermap(all_data, args, type_header, log)
+            create_clustermap(all_data, args, type_header, logfile)
           print("Done.")
 
         all_data = {}
@@ -2681,34 +2698,34 @@ PDB files directory (-s) not specified.
           entry_last_name_dir = args.s
 
         print("\nMethod: pairwise 3Di-character alignment")
-        log.write("""
+        write_log(logfile, """
 ********** 3Di Similarity **********
 """)
         file_3Di = f"{args.o}/{entry_last_name_dir}_3Di.fasta"
 
-        log.write("\nFoldseek:\n")
+        write_log(logfile, "\nFoldseek:\n")
 
         #Runs Foldseek program if the 3Di FASTA file doesn't exists.
         if os.path.isfile(file_3Di) == False:
           print("Converting PDB to 3Di-character sequences with Foldseek")
-          log.write("\nRunning Foldseek:\n")
-          run_foldseek(args, log)
+          write_log(logfile, "\nRunning Foldseek:\n")
+          run_foldseek(args, logfile)
           print("Conversion completed.\n")
         else:
-          log.write(f"""- Skipping Foldseek run. Output files already exists:
+          write_log(logfile, f"""- Skipping Foldseek run. Output files already exists:
   - {file_3Di}\n""")
           print("3Di and aa/3Di FASTA files already exist. Skipping Foldseek run.")
 
 
         #Runs needle program if the 3Di .needle file doesn't exists.
         needle_file = f'{args.o}/needle3Di_dir/{last_name_dir}_3Di_simil.needle'
-        log.write("\nNeedle (3Di characters alignment):\n")
+        write_log(logfile, "\nNeedle (3Di characters alignment):\n")
         if os.path.isfile(needle_file) == False:
           print("Running pairwise 3Di-character sequence alignments with needle…")
           run_needle3Di(file_3Di, args.o)
           print("Pairwise 3Di-character sequence alignments completed.")
         else:
-          log.write("- Needle 3Di similarity file already exists. Skipping Needle run.\n")
+          write_log(logfile, "- Needle 3Di similarity file already exists. Skipping Needle run.\n")
           print("Needle 3Di similarity file already exists. Skipping Needle run.")
 
         #Extract the identity values from a already saved matrix or from .needle file.
@@ -2717,7 +2734,7 @@ PDB files directory (-s) not specified.
           data = read_matrix_csv(matrix_name)
         else:
           data = data_from_needle3Di(needle_file, "3di")
-        mean, std = save_matrix(data, matrix_name, log)
+        mean, std = save_matrix(data, matrix_name, logfile)
 
         #Extract the maximum and minimum, intra and intergroup for the prefix groups.
         if prefixes != None:
@@ -2725,19 +2742,19 @@ PDB files directory (-s) not specified.
 
         all_data[save_graphics_dir+"/"+last_name_dir+"_3Di"] = data
 
-        log.write("\n3Di Similarity outputs:\n")
+        write_log(logfile, "\n3Di Similarity outputs:\n")
 
         #Performs the neighbor-joining clustering method.
-        nj_order = nj_tree(data, "3Di", args, log)
+        nj_order = nj_tree(data, "3Di", args, logfile)
         clstr_order = nj_order
 
         #Performs the data partitioning or...
         if clust_cmd_list and "4" in clust_cmd_list:
           method_clust = "4"
-          log.write("\nData partitioning based on 3Di character similarity values:\n")
+          write_log(logfile, "\nData partitioning based on 3Di character similarity values:\n")
           for subdata in all_data:
             for range_clust in clust_cmd_list[method_clust]:
-              cluster_in_subdata([method_clust, range_clust[0], range_clust[1]], all_data[subdata], clstr_order, args, "simil", log)
+              cluster_in_subdata([method_clust, range_clust[0], range_clust[1]], all_data[subdata], clstr_order, args, "simil", logfile)
 
         #Generates graphics.
         if "4" in args.p:
@@ -2749,16 +2766,16 @@ PDB files directory (-s) not specified.
           print("Done.")
 
           print("Generating heatmap plot of pairwise sequence alignment distance…")
-          create_njheatmap(all_data, nj_order, args, "nj", type_header, log)
+          create_njheatmap(all_data, nj_order, args, "nj", type_header, logfile)
           if args.k != None and args.k != "nj":
-            create_clustermap(all_data, args, type_header, log)
+            create_clustermap(all_data, args, type_header, logfile)
           print("Done.")
 
         all_data = {}
 
     #Saves the ranges of comparisons of the prefix groups in csv format.
     if prefixes:
-      save_results_to_csv(data_for_ranges_table, prefixes, args.o+"/metrics_ranges_table.csv", log)
+      save_results_to_csv(data_for_ranges_table, prefixes, args.o+"/metrics_ranges_table.csv", logfile)
 
     print("\nExecution completed.")
-    log.write("\nExecution completed.")
+    write_log(logfile, "\nExecution completed.")
